@@ -1,0 +1,71 @@
+## Colocalization analysis
+
+library(remotes)
+library("coloc")
+library(dplyr)
+library("readxl")
+library(data.table)
+library(TwoSampleMR)
+
+input <- read_excel("D:/coloc list,sheet = "Sheet1")
+
+for(i in 1:nrow(input)){
+  print(i)
+  
+  data1 <- NULL  
+  
+  filename <- paste0("D:/single cell project/sc-eQTL-cleaned/",input$type[i],"_500kb_window_tensorQTL.txt")
+  data1 <- fread(file = filename, sep = '\t', header = T, check.names = F)
+  
+  c <- NULL                   
+  d <- input[i,]
+  
+  gene <- data1[data1$phenotype==input$gene[i],] 
+  gene <- cbind(gene,sample="119")
+  gene <-format_data(gene, type = "exposure", header = TRUE,
+                     phenotype_col = "phenotype", snp_col = "snp", beta_col = "beta",
+                     se_col = "se", eaf_col = "minor_allele_freq", effect_allele_col = "effect_allele",
+                     other_allele_col = "other_allele",pval_col = "p",samplesize_col = "sample",)
+  
+  ## T2D 
+  outcome_dat <- NULL
+  attempts <- 0
+  while(attempts<=10){
+    try(
+      outcome_dat <- read_outcome_data(
+        snps = gene$SNP,
+        filename = "D:/Zheng meeting/single cell project/outcome data/DIAMANTE-EUR.sumstat.txt",                 
+        sep = " ",
+        snp_col = "rsID",
+        beta_col = "Fixed-effects_beta",
+        se_col = "Fixed-effects_SE",
+        effect_allele_col = "effect_allele",
+        other_allele_col = "other_allele",
+        eaf_col = "effect_allele_frequency",
+        pval_col = "Fixed-effects_p-value")
+    )
+    if(is.null(outcome_dat)){
+      attempts<-attempts+1}
+    else{
+      break
+    }
+  }
+  outcome_dat$outcome <- "T2D" 
+  
+  dat <- harmonise_data(gene,outcome_dat,action=1)
+  dat <- dat[!duplicated(dat$SNP), ]
+
+  ## run coloc
+  result <- coloc.abf(dataset2=list(snp=dat$SNP,pvalues=dat$pval.outcome, type="cc", s=0.086, N=dat$samplesize.outcome,MAF=dat$eaf.outcome),
+                      dataset1=list(snp=dat$SNP,pvalues=dat$pval.exposure, type="quant", N=dat$samplesize.exposure,MAF=dat$eaf.exposure))
+  
+  result2 <- result$summary
+  result2 <- data.frame(result2)
+  c <- as.data.frame(cbind(as.character(unlist(d[1,1])), as.character(unlist(d[1,2])),as.character(unlist(result2[1,1])),as.character(unlist(result2[2,1])),
+                           as.character(unlist(result2[3,1])),as.character(unlist(result2[4,1])),as.character(unlist(result2[5,1])),
+                           as.character(unlist(result2[6,1]))) )
+  
+  result_file <- paste0("./coloc/",as.character(unlist(d[1,1])),"_",as.character(unlist(d[1,2])),"_","T2D",".coloc.txt")
+  if (exists("c")==TRUE){ write.table(c,file=result_file,sep="\t",col.names=F,row.names=F,quote=F)}}
+
+
