@@ -1,0 +1,111 @@
+## We undertook two-sample MR to systematically evaluate the putative causal effects of 11,021 gene expression profiles during CD4+ T cell activation on type 2 diabetes (T2D) and coronary artery disease (CAD).
+
+library(TwoSampleMR)
+library(MRInstruments)
+library("readxl")
+
+## exposure data
+cd4_id <- read_excel("D:/11021 exposure.xlsx",sheet = "Sheet1")
+exposure_dat <-format_data(cd4_id, type = "exposure", header = TRUE,
+                           phenotype_col = "exposure", snp_col = "rsid", beta_col = "beta",
+                           se_col = "se", eaf_col = "maf", effect_allele_col = "alt",
+                           other_allele_col = "ref", pval_col = "pval", samplesize_col = "ma_samples",)
+
+## LD clumping
+snpexp_dat <- clump_data(
+  exposure_dat,
+  clump_kb = 5000,
+  clump_r2 = 0.001,
+  clump_p1 = 1,
+  clump_p2 = 1,
+  pop = "EUR"
+)
+
+## F statistics
+BetaXG <- snpexp_dat$beta.exposure 
+seXG <- snpexp_dat$se.exposure 
+BXG <- abs(BetaXG)
+snpexp_dat$F_statistics <-  BXG^2/seXG^2
+
+## outcome data
+## T2D DIAMANTE-EUR
+outcome_dat <- NULL
+attempts <- 0
+while(attempts<=10){
+  try(
+    outcome_dat <- read_outcome_data(
+      snps = snpexp_dat$SNP,
+      filename = "D:/T2D.txt",                 
+      sep = " ",
+      snp_col = "rsID",
+      beta_col = "Fixed-effects_beta",
+      se_col = "Fixed-effects_SE",
+      effect_allele_col = "effect_allele",
+      other_allele_col = "other_allele",
+      eaf_col = "effect_allele_frequency",
+      pval_col = "Fixed-effects_p-value")
+  )
+  if(is.null(outcome_dat)){
+    attempts<-attempts+1}
+  else{
+    break
+  }
+}
+outcome_dat$outcome <- "T2D" 
+
+## CAD
+outcome_dat <- NULL
+attempts <- 0
+while(attempts<=10){
+  try(
+    outcome_dat <- read_outcome_data(
+      snps = snpexp_dat$SNP,
+      filename = "E:/CAD.txt",                 
+      sep = "\t",
+      snp_col = "rsid_ukb",
+      beta_col = "beta",
+      se_col = "se",
+      effect_allele_col = "reference_allele",
+      other_allele_col = "other_allele",
+      eaf_col = "eaf",
+      pval_col = "p_value")
+  )
+  if(is.null(outcome_dat)){
+    attempts<-attempts+1}
+  else{
+    break
+  }
+}
+outcome_dat$outcome <- "CAD" 
+
+## harmonization
+harmdat <- harmonise_data(snpexp_dat, outcome_dat, action=2)
+
+## steiger filtering
+harmdat <- cbind(harmdat,rsq.exposure=1,rsq.outcome=1)
+harmdat$rsq.exposure <- (get_r_from_pn(p=harmdat$pval.exposure,n=harmdat$samplesize.exposure))^2
+harmdat$rsq.outcome <- (get_r_from_lor(
+  lor=harmdat$beta.outcome,
+  af=harmdat$eaf.outcome,
+  ncase=harmdat$ncase,
+  ncontrol=harmdat$ncontrol,
+  prevalence=harmdat$ncase/harmdat$samplesize.outcome))^2
+st <- psych::r.test( 
+  n = harmdat$samplesize.exposure, 
+  n2 = harmdat$samplesize.outcome, 
+  r12 = sqrt(harmdat$rsq.exposure), 
+  r34 = sqrt(harmdat$rsq.outcome))
+harmdat$steiger_dir <- harmdat$rsq.exposure > harmdat$rsq.outcome
+harmdat$steiger_pval <- pnorm(-abs(st$z)) * 2 
+
+## MR analysis
+mr_results <- mr(harmdat,method_list=c("mr_wald_ratio"))
+
+## FDR correction for MR results
+fdr <- p.adjust(mr_results$pval,method="BH",n=length(mr_results$pval))
+
+
+
+
+
+
