@@ -1,4 +1,5 @@
 ## We undertook two-sample MR to systematically evaluate the putative causal effects of 11,021 gene expression profiles during CD4+ T cell activation on type 2 diabetes (T2D) and coronary artery disease (CAD).
+## "11021 exposure.xlsx"：Please see the supplementary material of "Transcriptome-wide Mendelian randomization during CD4+ T cell activation reveals immune-related drug targets for type 2 diabetes and coronary artery disease".
 
 library(TwoSampleMR)
 library(MRInstruments)
