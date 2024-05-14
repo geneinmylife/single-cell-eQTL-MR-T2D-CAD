@@ -1,0 +1,87 @@
+## LD check
+
+library("ieugwasr")
+library("TwoSampleMR")
+library("readxl")
+input <- read_excel("D:/ld check list.xlsx",sheet = "Sheet1")
+
+for (i in 1:nrow(input)){
+  print(i)
+  
+  c <- NULL  
+  d <- input[i,]
+  
+  region <- paste0(d[1,2], ":", d[1,4], "-", d[1,5])
+  dat <- ieugwasr::associations(region,"ebi-a-GCST90012110")  
+  
+  exposure_dat <-format_data(dat, type = "exposure", header = TRUE, 
+                             snp_col = "rsid", beta_col = "beta",
+                             se_col = "se", eaf_col = "eaf", effect_allele_col = "ea",
+                             other_allele_col = "nea", pval_col = "p", samplesize_col = "n",)
+    
+  ## T2D 
+  outcome_dat <- NULL
+  attempts <- 0
+  while(attempts<=10){
+    try(
+      outcome_dat <- read_outcome_data(
+        snps = exposure_dat$SNP,
+        filename = "D:/Zheng meeting/single cell project/outcome data/DIAMANTE-EUR.sumstat.txt",                 
+        sep = " ",
+        snp_col = "rsID",
+        beta_col = "Fixed-effects_beta",
+        se_col = "Fixed-effects_SE",
+        effect_allele_col = "effect_allele",
+        other_allele_col = "other_allele",
+        eaf_col = "effect_allele_frequency",
+        pval_col = "Fixed-effects_p-value")
+    )
+    if(is.null(outcome_dat)){
+      attempts<-attempts+1}
+    else{
+      break
+    }
+  }
+  outcome_dat$outcome <- "T2D" 
+    
+  data <- harmonise_data(exposure_dat, outcome_dat, action=1)
+  
+  try(data <- data[order(data$pval.outcome),]) 
+  try(data <- data[data$pval.outcome<1E-3,])
+  try(if(nrow(data)>=500){data <- data[1:499,] })
+  #str(data)
+  
+  if (nrow(data)!=0){
+    rsid <- as.character(unlist(d[1,6]))
+    snp <- append(as.character(unlist(data$SNP)), rsid)
+    
+    a <- NULL
+    attempts <- 0
+    while(attempts<=10){    
+      try(a <- ld_matrix(snps=snp))  
+      if(is.null(a)){
+        attempts<-attempts+1}
+      else{
+        break
+      }
+    }
+    
+    if(is.null(nrow(a))==TRUE){
+      c <- as.data.frame(cbind(as.character(unlist(d[1,6])), as.character(unlist(d[1,1])),rsid, 1 ) )
+    } else {
+      col.index <- which(grepl(rsid,colnames(a)))
+      b <- (a[,col.index])^2
+      b <- b[order(b)]
+      b <- b[(length(b)-1)] 
+      c <- as.data.frame(cbind(as.character(unlist(d[1,6])),as.character(unlist(d[1,1])), names(b), as.character(unlist(b))) )
+    }
+    
+  } else {
+    c <- as.data.frame(cbind(as.character(unlist(d[1,6])), as.character(unlist(d[1,1])),"NA","NA" ) ) 
+  } 
+  
+  result_file <- paste0("./ld-check/",as.character(unlist(d[1,6])),".",as.character(unlist(d[1,1])),".ldcheck.txt")
+  if (exists("c")==TRUE){ write.table(c,file=result_file,sep="\t",col.names=F,row.names=F,quote=F)}
+  
+}  
+
