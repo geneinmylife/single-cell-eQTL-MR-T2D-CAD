@@ -1,3 +1,4 @@
 # single-cell-eQTL-MR-T2D-CAD
 
-test
+This repository contains code for immune cell-specific eQTL-Mendelian randomization on T2D and CAD. 
+
